@@ -591,7 +591,7 @@ function DoctorFormModal({
   const [opdRoom, setOpdRoom] = useState(doctor?.opdRoom || "Room 101");
   const [consultationFee, setConsultationFee] = useState<number>(doctor?.consultationFee || 500);
   const [availableTiming, setAvailableTiming] = useState(doctor?.availableTiming || "Mon - Sat (09:00 AM - 01:00 PM)");
-  const [status, setStatus] = useState<string>(doctor?.status || "Active");
+  const [status, setStatus] = useState<'Active' | 'On Leave' | 'Inactive'>(doctor?.status || "Active");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -723,7 +723,7 @@ function DoctorFormModal({
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">Roster Status</label>
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(e) => setStatus(e.target.value as 'Active' | 'On Leave' | 'Inactive')}
                 className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
               >
                 <option value="Active">Active on Duty</option>

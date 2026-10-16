@@ -281,9 +281,9 @@ export default function Dashboard() {
                       { day: 'Wed', count: 1 },
                       { day: 'Thu', count: 6 }
                     ];
-                const maxCount = Math.max(...footfallList.map(f => f.count), 1);
+                const maxCount = Math.max(...footfallList.map((f: { day: string; count: number }) => f.count), 1);
 
-                return footfallList.map((item, i) => {
+                return footfallList.map((item: { day: string; count: number }, i: number) => {
                   const pct = Math.max(15, Math.round((item.count / maxCount) * 100));
                   return (
                     <div 
@@ -302,7 +302,7 @@ export default function Dashboard() {
             <div className="flex justify-between text-xs text-gray-400 mt-2 font-medium">
               {(data?.footfall || [
                 { day: 'Fri' }, { day: 'Sat' }, { day: 'Sun' }, { day: 'Mon' }, { day: 'Tue' }, { day: 'Wed' }, { day: 'Thu' }
-              ]).map((f, i) => (
+              ]).map((f: { day: string; count?: number }, i: number) => (
                 <span key={i}>{f.day}</span>
               ))}
             </div>
@@ -324,7 +324,7 @@ export default function Dashboard() {
           <div className="bg-white rounded-lg p-5 border border-gray-100 shadow-sm flex flex-col relative">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Bed occupancy by ward</h3>
             <div className="flex flex-col gap-3">
-              {wards.map((w, idx) => (
+              {wards.map((w: { ward: string; occupied: number; total: number }, idx: number) => (
                 <ProgressBar 
                   key={idx} 
                   label={w.ward} 
@@ -368,7 +368,7 @@ export default function Dashboard() {
                       </td>
                     </tr>
                   ) : (
-                    appointments.map((a) => (
+                    appointments.map((a: any) => (
                       <AppointmentRow 
                         key={a.id}
                         time={a.time} 

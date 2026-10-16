@@ -128,6 +128,7 @@ export interface Patient {
   gender?: string;
   genderAge: string;
   contact: string;
+  phone?: string;
   email?: string | null;
   abha: 'Linked' | 'Pending';
   department?: string;
@@ -383,6 +384,8 @@ export interface Lead {
   notes?: string;
   assignedTo?: string;
   meta?: string;
+  convertedPatientId?: string | null;
+  patientUhid?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -1165,6 +1168,8 @@ export const feedbackApi = {
     });
   },
 };
+
+export type DashboardOverview = DashboardData;
 
 export interface DashboardData {
   kpis: {
