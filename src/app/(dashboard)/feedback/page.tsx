@@ -1,59 +1,148 @@
 "use client";
 
-import React, { useState } from "react";
-import { Search, Filter, MessageSquare, Star, Send, ArrowUpRight, TrendingUp, ThumbsUp, ThumbsDown, UserPlus, HeartPulse } from "lucide-react";
-
-type NPSCategory = 'Promoter' | 'Passive' | 'Detractor';
-
-interface Feedback {
-  id: string;
-  patient: string;
-  department: string;
-  doctor: string;
-  npsScore: number;
-  rating: number;
-  comment: string;
-  category: NPSCategory;
-  date: string;
-}
-
-const FEEDBACK_DATA: Feedback[] = [
-  { id: "FB-101", patient: "Rajesh Kumar", department: "Cardiology", doctor: "Dr. Faizal Khan", npsScore: 9, rating: 5, comment: "Excellent care and attention from the nursing staff.", category: "Promoter", date: "08 Oct 2026" },
-  { id: "FB-102", patient: "Sneha Patel", department: "Maternity", doctor: "Dr. Sunita Sharma", npsScore: 10, rating: 5, comment: "The birthing suite was amazing. Doctor was very patient.", category: "Promoter", date: "07 Oct 2026" },
-  { id: "FB-103", patient: "Amit Singh", department: "Orthopedics", doctor: "Dr. Rohan Desai", npsScore: 5, rating: 3, comment: "Wait times were too long in the OPD.", category: "Detractor", date: "06 Oct 2026" },
-  { id: "FB-104", patient: "Pooja Verma", department: "General Medicine", doctor: "Dr. Arvind Mehta", npsScore: 8, rating: 4, comment: "Good experience overall, slightly expensive.", category: "Passive", date: "05 Oct 2026" },
-  { id: "FB-105", patient: "Neha Gupta", department: "Pediatrics", doctor: "Dr. Kavita Iyer", npsScore: 2, rating: 1, comment: "Very bad experience with the billing department.", category: "Detractor", date: "04 Oct 2026" },
-];
+import React, { useState, useEffect, useCallback } from "react";
+import { 
+  Search, Filter, MessageSquare, Star, Send, ArrowUpRight, TrendingUp, 
+  ThumbsUp, ThumbsDown, UserPlus, HeartPulse, RefreshCw, CheckCircle, 
+  AlertCircle, X, Mail, Phone, ExternalLink, MessageCircle
+} from "lucide-react";
+import { feedbackApi, FeedbackItem, FeedbackMetrics, NPSCategory } from "@/lib/api";
 
 export default function FeedbackPage() {
+  const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([]);
+  const [metrics, setMetrics] = useState<FeedbackMetrics>({
+    totalReviews: 0,
+    npsScore: 0,
+    avgRating: 0,
+    promoterPct: 0,
+    passivePct: 0,
+    detractorPct: 0,
+    actionRequired: 0,
+  });
+
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [selectedDepartment, setSelectedDepartment] = useState<string>("All");
   const [showFilters, setShowFilters] = useState(false);
   const [showSurvey, setShowSurvey] = useState(false);
-  const [selectedFeedback, setSelectedFeedback] = useState<Feedback | null>(null);
+  const [sendingSurvey, setSendingSurvey] = useState(false);
+  const [selectedFeedback, setSelectedFeedback] = useState<FeedbackItem | null>(null);
+  const [followUpNote, setFollowUpNote] = useState("");
+  const [updatingStatus, setUpdatingStatus] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Send survey form state
+  const [surveyForm, setSurveyForm] = useState({
+    targetAudience: "Recent OPD Consults (Last 24h)",
+    channel: "Email",
+    patientName: "",
+    customEmail: "sumanqaj9876@gmail.com",
+    customPhone: "+91 98765 43210"
+  });
 
   const showToast = (message: string) => {
     setToastMessage(message);
-    setTimeout(() => setToastMessage(null), 3000);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const filteredFeedback = FEEDBACK_DATA.filter(fb => 
-    fb.patient.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    fb.department.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const loadFeedbackData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await feedbackApi.getAll({
+        search: searchQuery,
+        category: selectedCategory,
+        department: selectedDepartment,
+      });
+
+      if (res.data) {
+        setFeedbacks(res.data.feedbacks || []);
+        setMetrics(res.data.metrics || {
+          totalReviews: 0,
+          npsScore: 0,
+          avgRating: 0,
+          promoterPct: 0,
+          passivePct: 0,
+          detractorPct: 0,
+          actionRequired: 0,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load feedbacks:", err);
+      showToast("Could not load feedback data from server");
+    } finally {
+      setLoading(false);
+    }
+  }, [searchQuery, selectedCategory, selectedDepartment]);
+
+  useEffect(() => {
+    loadFeedbackData();
+  }, [loadFeedbackData]);
+
+  const handleSendSurvey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setSendingSurvey(true);
+      const res = await feedbackApi.sendSurvey({
+        targetAudience: surveyForm.targetAudience,
+        channel: surveyForm.channel,
+        customEmail: surveyForm.customEmail,
+        customPhone: surveyForm.customPhone,
+        patientName: surveyForm.patientName || "Valued Patient"
+      });
+
+      if (res.data) {
+        showToast(res.data.message || `Survey sent via ${surveyForm.channel}!`);
+        setShowSurvey(false);
+      }
+    } catch (err: any) {
+      console.error("Error dispatching survey:", err);
+      showToast(err?.message || "Failed to dispatch survey");
+    } finally {
+      setSendingSurvey(false);
+    }
+  };
+
+  const handleUpdateStatus = async (id: string, newStatus: string) => {
+    try {
+      setUpdatingStatus(true);
+      await feedbackApi.updateStatus(id, {
+        status: newStatus,
+        followUpNotes: followUpNote
+      });
+
+      showToast(`Feedback ${id} marked as ${newStatus}!`);
+      setSelectedFeedback(null);
+      setFollowUpNote("");
+      loadFeedbackData();
+    } catch (err: any) {
+      console.error("Error updating feedback status:", err);
+      showToast("Failed to update status");
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
 
   const getCategoryStyles = (category: NPSCategory) => {
     switch (category) {
-      case 'Promoter': return 'bg-success/10 text-success border-success/20';
-      case 'Passive': return 'bg-warning/10 text-warning border-warning/20';
-      case 'Detractor': return 'bg-critical/10 text-critical border-critical/20';
-      default: return 'bg-gray-100 text-gray-700 border-gray-200';
+      case 'Promoter': 
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'Passive': 
+        return 'bg-amber-50 text-amber-700 border-amber-200';
+      case 'Detractor': 
+        return 'bg-red-50 text-red-700 border-red-200';
+      default: 
+        return 'bg-gray-100 text-gray-700 border-gray-200';
     }
   };
 
   const renderStars = (rating: number) => {
     return Array.from({ length: 5 }).map((_, i) => (
-      <Star key={i} size={14} className={i < rating ? "fill-orange-400 text-orange-400" : "text-gray-300"} />
+      <Star 
+        key={i} 
+        size={14} 
+        className={i < rating ? "fill-amber-400 text-amber-400" : "text-gray-300"} 
+      />
     ));
   };
 
@@ -65,7 +154,7 @@ export default function FeedbackPage() {
         <header className="flex flex-col md:flex-row md:items-center justify-between px-4 md:px-10 py-4 md:py-6 gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Patient Feedback & NPS</h1>
-            <p className="text-sm text-gray-400 mt-1 font-medium">Monitor patient satisfaction and Net Promoter Score</p>
+            <p className="text-sm text-gray-400 mt-1 font-medium">Monitor patient satisfaction, Net Promoter Score, and clinical service quality</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
@@ -77,16 +166,29 @@ export default function FeedbackPage() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search patient, dept..."
+                placeholder="Search patient, doctor, dept..."
                 className="cursor-text pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-full md:w-72 bg-white focus:outline-none focus:ring-2 focus:ring-[#0B5E5E]/20 transition-all placeholder:text-gray-400 font-medium"
               />
             </div>
+            
             <button 
               onClick={() => setShowFilters(true)}
               className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
             >
               <Filter size={16} /> Filters
+              {(selectedCategory !== 'All' || selectedDepartment !== 'All') && (
+                <span className="w-2 h-2 rounded-full bg-[#0B5E5E]" />
+              )}
             </button>
+
+            <button
+              onClick={loadFeedbackData}
+              className="p-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 cursor-pointer"
+              title="Refresh data"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
+
             <button 
               onClick={() => setShowSurvey(true)}
               className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-[#0B5E5E] text-white rounded-lg text-sm font-semibold hover:bg-[#0B5E5E]/90 transition-colors shadow-sm"
@@ -99,151 +201,227 @@ export default function FeedbackPage() {
 
       <div className="flex-1 overflow-auto p-4 md:p-10 scrollbar-hide space-y-8">
         
-        {/* KPI Cards */}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-start gap-4 hover:shadow-md transition-shadow cursor-pointer">
-            <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-              <HeartPulse className="text-blue-600" size={24} />
+        {/* KPI Summary Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-start gap-4 hover:shadow-md transition-shadow">
+            <div className="w-12 h-12 rounded-xl bg-teal-50 text-[#0B5E5E] flex items-center justify-center shrink-0">
+              <HeartPulse size={24} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-500 mb-1">Average NPS</p>
-              <h3 className="text-2xl font-bold text-gray-900">72</h3>
-              <p className="text-xs font-semibold text-success mt-2 flex items-center gap-1">
-                <TrendingUp size={12} /> +4 pts this month
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Net Promoter Score</p>
+              <h3 className="text-3xl font-extrabold text-gray-900">{metrics.npsScore > 0 ? `+${metrics.npsScore}` : metrics.npsScore}</h3>
+              <p className="text-xs font-semibold text-emerald-600 mt-2 flex items-center gap-1">
+                <TrendingUp size={12} /> {metrics.avgRating} / 5.0 Avg Stars
               </p>
             </div>
           </div>
           
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-start gap-4 hover:shadow-md transition-shadow cursor-pointer">
-            <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center shrink-0">
-              <ThumbsUp className="text-green-600" size={24} />
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-start gap-4 hover:shadow-md transition-shadow">
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <ThumbsUp size={24} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-500 mb-1">Promoters (9-10)</p>
-              <h3 className="text-2xl font-bold text-gray-900">82%</h3>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Promoters (9-10)</p>
+              <h3 className="text-3xl font-extrabold text-gray-900">{metrics.promoterPct}%</h3>
+              <p className="text-xs text-gray-400 mt-2 font-medium">Brand advocates & happy patients</p>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-start gap-4 hover:shadow-md transition-shadow cursor-pointer">
-            <div className="w-12 h-12 rounded-full bg-orange-50 flex items-center justify-center shrink-0">
-              <UserPlus className="text-orange-600" size={24} />
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-start gap-4 hover:shadow-md transition-shadow">
+            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+              <UserPlus size={24} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-500 mb-1">Passives (7-8)</p>
-              <h3 className="text-2xl font-bold text-gray-900">12%</h3>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Passives (7-8)</p>
+              <h3 className="text-3xl font-extrabold text-gray-900">{metrics.passivePct}%</h3>
+              <p className="text-xs text-gray-400 mt-2 font-medium">Satisfied, retention target</p>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-start gap-4 hover:shadow-md transition-shadow cursor-pointer">
-            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center shrink-0">
-              <ThumbsDown className="text-red-600" size={24} />
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-start gap-4 hover:shadow-md transition-shadow">
+            <div className="w-12 h-12 rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+              <ThumbsDown size={24} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-500 mb-1">Detractors (0-6)</p>
-              <h3 className="text-2xl font-bold text-gray-900">6%</h3>
-              <p className="text-xs font-semibold text-critical mt-2 flex items-center gap-1">
-                <ArrowUpRight size={12} /> Action Required
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Detractors (0-6)</p>
+              <h3 className="text-3xl font-extrabold text-gray-900">{metrics.detractorPct}%</h3>
+              <p className="text-xs font-semibold text-red-600 mt-2 flex items-center gap-1">
+                <AlertCircle size={12} /> {metrics.actionRequired} Cases Require Follow-up
               </p>
             </div>
           </div>
         </div>
 
         {/* Main Table Area */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto scrollbar-hide">
-          <table className="w-full min-w-max text-sm text-left whitespace-nowrap">
-            <thead className="bg-white text-gray-500 font-bold border-b border-gray-100">
-              <tr>
-                <th className="px-6 py-5">Patient Name</th>
-                <th className="px-6 py-5">Department</th>
-                <th className="px-6 py-5">NPS (0-10)</th>
-                <th className="px-6 py-5">Rating</th>
-                <th className="px-6 py-5 max-w-[300px]">Feedback Comment</th>
-                <th className="px-6 py-5">Date</th>
-                <th className="px-6 py-5"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {filteredFeedback.length === 0 ? (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-lg text-gray-900">Patient Reviews & Experience Audit</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Live feedback collected via OPD, discharge surveys, and direct care encounters</p>
+            </div>
+            <span className="text-xs font-semibold text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+              Total {feedbacks.length} Feedback Records
+            </span>
+          </div>
+
+          <div className="overflow-x-auto scrollbar-hide">
+            <table className="w-full min-w-max text-sm text-left">
+              <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-400 font-medium">
-                    No feedback found matching your criteria.
-                  </td>
+                  <th className="px-6 py-4 font-bold text-gray-600 text-xs uppercase tracking-wider">Patient Name</th>
+                  <th className="px-6 py-4 font-bold text-gray-600 text-xs uppercase tracking-wider">Department & Doctor</th>
+                  <th className="px-6 py-4 font-bold text-gray-600 text-xs uppercase tracking-wider">NPS Category</th>
+                  <th className="px-6 py-4 font-bold text-gray-600 text-xs uppercase tracking-wider">Rating</th>
+                  <th className="px-6 py-4 font-bold text-gray-600 text-xs uppercase tracking-wider max-w-xs">Patient Remarks</th>
+                  <th className="px-6 py-4 font-bold text-gray-600 text-xs uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-4 font-bold text-gray-600 text-xs uppercase tracking-wider text-right">Actions</th>
                 </tr>
-              ) : (
-                filteredFeedback.map((fb) => (
-                  <tr key={fb.id} className="hover:bg-gray-50 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="font-bold text-gray-900 cursor-pointer hover:text-[#0B5E5E] transition-colors">
-                        {fb.patient}
-                      </div>
-                      <div className="text-xs text-gray-400 mt-0.5">{fb.id}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="font-semibold text-gray-600">{fb.department}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{fb.doctor}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-bold border ${getCategoryStyles(fb.category)}`}>
-                        {fb.npsScore} - {fb.category}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-1">
-                        {renderStars(fb.rating)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 max-w-[300px] truncate text-gray-600 font-medium">
-                      &quot;{fb.comment}&quot;
-                    </td>
-                    <td className="px-6 py-4 font-semibold text-gray-600">{fb.date}</td>
-                    <td className="px-6 py-4 text-right pr-8">
-                      <button 
-                        onClick={() => setSelectedFeedback(fb)}
-                        className="text-[#0B5E5E] font-bold hover:text-[#0B5E5E]/80 transition-colors cursor-pointer text-sm"
-                      >
-                        Read More
-                      </button>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                      <RefreshCw className="animate-spin inline mr-2" size={16} /> Fetching patient feedback records...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : feedbacks.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-gray-400 font-medium">
+                      No feedback entries found matching your criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  feedbacks.map((fb) => (
+                    <tr key={fb.id} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-gray-900 cursor-pointer hover:text-[#0B5E5E] transition-colors">
+                          {fb.patient}
+                        </div>
+                        <div className="text-[11px] text-gray-400 font-mono mt-0.5">{fb.id} &bull; {fb.date}</div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-gray-900 text-xs">{fb.department}</div>
+                        <div className="text-[11px] text-gray-500 font-medium mt-0.5">{fb.doctor || 'Staff General'}</div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${getCategoryStyles(fb.category)}`}>
+                          Score {fb.npsScore} &bull; {fb.category}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-1">
+                          {renderStars(fb.rating)}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4 max-w-xs">
+                        <p className="text-xs text-gray-600 font-medium truncate" title={fb.comment}>
+                          &quot;{fb.comment}&quot;
+                        </p>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                          fb.status === 'Resolved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                          fb.status === 'Action Required' ? 'bg-red-50 text-red-700 border border-red-200' :
+                          'bg-gray-100 text-gray-600 border border-gray-200'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            fb.status === 'Resolved' ? 'bg-emerald-500' :
+                            fb.status === 'Action Required' ? 'bg-red-500' :
+                            'bg-gray-400'
+                          }`} />
+                          {fb.status}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-4 text-right">
+                        <button 
+                          onClick={() => {
+                            setSelectedFeedback(fb);
+                            setFollowUpNote(fb.followUpNotes || "");
+                          }}
+                          className="cursor-pointer text-xs font-bold text-[#0B5E5E] bg-emerald-50 hover:bg-emerald-100/80 px-3 py-1.5 rounded-lg transition-colors border border-emerald-100"
+                        >
+                          Review &rarr;
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       {/* Filter Modal */}
       {showFilters && (
-        <div className="fixed inset-0 z-50 bg-nav/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col border border-gray-100">
             <div className="flex justify-between items-center p-5 border-b border-gray-100">
-              <h3 className="font-bold text-lg text-gray-900">Filter Feedback</h3>
-              <button onClick={() => setShowFilters(false)} className="cursor-pointer text-gray-400 hover:text-gray-600 transition-colors text-sm font-semibold">Close</button>
+              <h3 className="font-bold text-base text-gray-900">Filter Feedback</h3>
+              <button 
+                onClick={() => setShowFilters(false)} 
+                className="cursor-pointer text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
             </div>
+            
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2 cursor-pointer">NPS Category</label>
-                <select className="cursor-pointer w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white">
-                  <option>All Categories</option>
-                  <option>Promoters (9-10)</option>
-                  <option>Passives (7-8)</option>
-                  <option>Detractors (0-6)</option>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">NPS Category</label>
+                <select 
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="cursor-pointer w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm bg-white font-medium"
+                >
+                  <option value="All">All Categories</option>
+                  <option value="Promoter">Promoters (9-10)</option>
+                  <option value="Passive">Passives (7-8)</option>
+                  <option value="Detractor">Detractors (0-6)</option>
                 </select>
               </div>
+
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2 cursor-pointer">Department</label>
-                <select className="cursor-pointer w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white">
-                  <option>All Departments</option>
-                  <option>Cardiology</option>
-                  <option>Orthopedics</option>
-                  <option>Maternity</option>
-                  <option>Pediatrics</option>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Department</label>
+                <select 
+                  value={selectedDepartment}
+                  onChange={(e) => setSelectedDepartment(e.target.value)}
+                  className="cursor-pointer w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm bg-white font-medium"
+                >
+                  <option value="All">All Departments</option>
+                  <option value="Cardiology">Cardiology</option>
+                  <option value="Orthopedics">Orthopedics</option>
+                  <option value="Maternity">Gynecology & Maternity</option>
+                  <option value="General Medicine">General Medicine</option>
+                  <option value="Pediatrics">Pediatrics</option>
+                  <option value="Neurology">Neurology</option>
                 </select>
               </div>
             </div>
-            <div className="flex justify-end gap-3 p-5 bg-gray-50/50 border-t border-gray-100">
-              <button onClick={() => setShowFilters(false)} className="cursor-pointer px-4 py-2 text-sm font-semibold text-gray-700">Clear</button>
-              <button onClick={() => { setShowFilters(false); showToast('Filters applied!'); }} className="cursor-pointer px-5 py-2 text-sm font-semibold text-white bg-[#0B5E5E] rounded-lg">Apply Filters</button>
+
+            <div className="flex justify-end gap-3 p-5 bg-gray-50 border-t border-gray-100">
+              <button 
+                onClick={() => {
+                  setSelectedCategory('All');
+                  setSelectedDepartment('All');
+                  setShowFilters(false);
+                }} 
+                className="cursor-pointer px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-900"
+              >
+                Reset Filters
+              </button>
+              <button 
+                onClick={() => setShowFilters(false)} 
+                className="cursor-pointer px-5 py-2 text-xs font-bold text-white bg-[#0B5E5E] rounded-lg shadow-sm"
+              >
+                Apply Filters
+              </button>
             </div>
           </div>
         </div>
@@ -251,39 +429,134 @@ export default function FeedbackPage() {
 
       {/* Send Survey Modal */}
       {showSurvey && (
-        <div className="fixed inset-0 z-50 bg-nav/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col">
-            <div className="flex justify-between items-center p-5 border-b border-gray-100 bg-gray-50/50">
-              <h3 className="font-bold text-lg text-gray-900">Send NPS Survey</h3>
-              <button onClick={() => setShowSurvey(false)} className="cursor-pointer text-gray-400 hover:text-gray-600 transition-colors text-sm font-semibold">Close</button>
-            </div>
-            <form onSubmit={(e) => { e.preventDefault(); setShowSurvey(false); showToast('Survey campaigns triggered successfully!'); }} className="p-6 space-y-4">
-              <div>
-                <label className="cursor-pointer block text-sm font-semibold text-gray-700 mb-1.5">Target Audience</label>
-                <select className="cursor-pointer w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0B5E5E]/20">
-                  <option>Recent Discharges (Last 24h)</option>
-                  <option>Recent OPD Consults (Last 24h)</option>
-                  <option>All Patients (Monthly Sweep)</option>
-                </select>
-              </div>
-              <div>
-                <label className="cursor-pointer block text-sm font-semibold text-gray-700 mb-1.5">Survey Channel</label>
-                <div className="flex items-center gap-4 mt-2">
-                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
-                    <input type="checkbox" defaultChecked className="cursor-pointer rounded text-[#0B5E5E] focus:ring-[#0B5E5E]" /> SMS
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
-                    <input type="checkbox" defaultChecked className="cursor-pointer rounded text-[#0B5E5E] focus:ring-[#0B5E5E]" /> Email
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
-                    <input type="checkbox" className="cursor-pointer rounded text-[#0B5E5E] focus:ring-[#0B5E5E]" /> WhatsApp
-                  </label>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-gray-100">
+            <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-teal-50 text-[#0B5E5E] flex items-center justify-center">
+                  <Send size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-gray-900">Send Patient NPS Survey</h3>
+                  <p className="text-xs text-gray-400">Dispatch 1-minute digital satisfaction survey</p>
                 </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
-                <button type="button" onClick={() => setShowSurvey(false)} className="cursor-pointer px-5 py-2.5 text-sm font-semibold border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
-                <button type="submit" className="cursor-pointer px-5 py-2.5 text-sm font-semibold text-white bg-[#0B5E5E] rounded-lg hover:bg-[#0B5E5E]/90 transition-colors flex items-center gap-2">
-                  <Send size={16} /> Send Now
+              <button 
+                onClick={() => setShowSurvey(false)} 
+                className="cursor-pointer text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendSurvey} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Target Audience
+                </label>
+                <select 
+                  value={surveyForm.targetAudience}
+                  onChange={(e) => setSurveyForm(prev => ({ ...prev, targetAudience: e.target.value }))}
+                  className="cursor-pointer w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm bg-white font-medium"
+                >
+                  <option value="Recent Discharges (Last 24h)">Recent IPD Discharges (Last 24h)</option>
+                  <option value="Recent OPD Consults (Last 24h)">Recent OPD Consultations (Last 24h)</option>
+                  <option value="Specific Patient">Specific Patient Direct Dispatch</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Patient Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={surveyForm.patientName}
+                  onChange={(e) => setSurveyForm(prev => ({ ...prev, patientName: e.target.value }))}
+                  placeholder="e.g. Rahul Sharma"
+                  className="cursor-text w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm bg-white font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Recipient Email (Gmail SMTP)
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                    <Mail size={16} className="text-gray-400" />
+                  </div>
+                  <input
+                    type="email"
+                    required
+                    value={surveyForm.customEmail}
+                    onChange={(e) => setSurveyForm(prev => ({ ...prev, customEmail: e.target.value }))}
+                    placeholder="patient@gmail.com"
+                    className="cursor-text w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Delivery Channel
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSurveyForm(prev => ({ ...prev, channel: 'Email' }))}
+                    className={`cursor-pointer p-3 border rounded-xl flex items-center gap-2.5 text-xs font-bold transition-all ${
+                      surveyForm.channel === 'Email' 
+                        ? 'border-[#0B5E5E] bg-teal-50/50 text-[#0B5E5E]' 
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Mail size={16} /> Email (Active SMTP)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSurveyForm(prev => ({ ...prev, channel: 'WhatsApp' }))}
+                    className={`cursor-pointer p-3 border rounded-xl flex items-center gap-2.5 text-xs font-bold transition-all ${
+                      surveyForm.channel === 'WhatsApp' 
+                        ? 'border-[#0B5E5E] bg-teal-50/50 text-[#0B5E5E]' 
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <MessageCircle size={16} /> WhatsApp Cloud
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 bg-teal-50/60 rounded-xl border border-teal-100 flex items-start gap-2.5 text-xs text-[#0B5E5E]">
+                <CheckCircle size={16} className="shrink-0 mt-0.5" />
+                <span>
+                  The recipient receives a clean 1-tap rating link. When submitted, responses update this dashboard in real-time.
+                </span>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
+                <button 
+                  type="button" 
+                  onClick={() => setShowSurvey(false)} 
+                  className="cursor-pointer px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-900"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={sendingSurvey}
+                  className="cursor-pointer flex items-center gap-2 px-5 py-2.5 bg-[#0B5E5E] text-white rounded-lg text-xs font-bold hover:bg-[#0B5E5E]/90 transition-colors shadow-sm disabled:opacity-60"
+                >
+                  {sendingSurvey ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" /> Dispatching...
+                    </>
+                  ) : (
+                    <>
+                      <Send size={14} /> Send Survey Now
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -291,86 +564,126 @@ export default function FeedbackPage() {
         </div>
       )}
 
-      {/* Read More Modal */}
+      {/* Review Feedback Detail Modal */}
       {selectedFeedback && (
-        <div className="fixed inset-0 z-50 bg-nav/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-gray-100">
             <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50/50">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-                  <MessageSquare className="text-blue-600" size={24} />
+                <div className="w-12 h-12 rounded-xl bg-teal-50 text-[#0B5E5E] flex items-center justify-center shrink-0">
+                  <MessageSquare size={22} />
                 </div>
                 <div>
-                  <h3 className="font-bold text-xl text-gray-900">Feedback from {selectedFeedback.patient}</h3>
-                  <p className="text-sm text-gray-500 mt-0.5 font-medium">{selectedFeedback.date} &middot; {selectedFeedback.department}</p>
+                  <h3 className="font-bold text-lg text-gray-900">Patient Feedback: {selectedFeedback.patient}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5 font-medium">
+                    {selectedFeedback.date} &bull; {selectedFeedback.department} &bull; Attending: {selectedFeedback.doctor}
+                  </p>
                 </div>
               </div>
-              <button onClick={() => setSelectedFeedback(null)} className="cursor-pointer text-gray-400 hover:text-gray-600 transition-colors text-sm font-semibold">Close</button>
+              <button 
+                onClick={() => setSelectedFeedback(null)} 
+                className="cursor-pointer text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100"
+              >
+                <X size={18} />
+              </button>
             </div>
             
-            <div className="p-8 bg-white space-y-6">
+            <div className="p-8 space-y-6">
               
-              <div className="flex items-center gap-6 pb-6 border-b border-gray-100">
+              {/* Score & Rating metrics */}
+              <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
                 <div>
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Score</p>
-                  <span className={`inline-flex items-center px-3 py-1 rounded-md text-sm font-bold border ${getCategoryStyles(selectedFeedback.category)}`}>
-                    NPS {selectedFeedback.npsScore} ({selectedFeedback.category})
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">NPS Score</p>
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${getCategoryStyles(selectedFeedback.category)}`}>
+                    Score {selectedFeedback.npsScore} &bull; {selectedFeedback.category}
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Rating</p>
-                  <div className="flex items-center gap-1 mt-2">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Star Rating</p>
+                  <div className="flex items-center gap-1 mt-1">
                     {renderStars(selectedFeedback.rating)}
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Attending Doctor</p>
-                  <p className="text-sm font-bold text-gray-900 mt-1">{selectedFeedback.doctor}</p>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Channel</p>
+                  <p className="text-xs font-bold text-gray-800 mt-1">{selectedFeedback.surveyChannel}</p>
                 </div>
               </div>
 
-              <div>
-                <h4 className="font-bold text-gray-900 mb-3">Detailed Comment</h4>
-                <div className="p-5 bg-gray-50 rounded-xl border border-gray-100">
-                  <p className="text-gray-700 italic">&quot;{selectedFeedback.comment}&quot;</p>
-                </div>
-              </div>
-
-              {selectedFeedback.category === 'Detractor' && (
-                <div className="bg-critical/5 p-5 rounded-xl border border-critical/20">
-                  <h4 className="font-bold text-critical mb-2 flex items-center gap-2">
-                    <ArrowUpRight size={16} /> Resolution Required
-                  </h4>
-                  <p className="text-sm text-gray-700 mb-4">This patient is a detractor. Please follow up immediately to resolve their concerns.</p>
-                  <textarea 
-                    className="cursor-text w-full p-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-critical/20 bg-white resize-none" 
-                    rows={3} 
-                    placeholder="Log your follow-up action here..."
-                  ></textarea>
+              {/* Department aspects breakdown */}
+              {selectedFeedback.aspects && (
+                <div>
+                  <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider mb-3">Service Breakdown</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-3 bg-white border border-gray-100 rounded-xl text-center">
+                      <p className="text-[11px] text-gray-400 font-medium">Doctor Care</p>
+                      <p className="text-sm font-bold text-gray-900 mt-0.5">{selectedFeedback.aspects.doctorCare || 5} / 5</p>
+                    </div>
+                    <div className="p-3 bg-white border border-gray-100 rounded-xl text-center">
+                      <p className="text-[11px] text-gray-400 font-medium">Cleanliness</p>
+                      <p className="text-sm font-bold text-gray-900 mt-0.5">{selectedFeedback.aspects.cleanliness || 5} / 5</p>
+                    </div>
+                    <div className="p-3 bg-white border border-gray-100 rounded-xl text-center">
+                      <p className="text-[11px] text-gray-400 font-medium">Nursing Staff</p>
+                      <p className="text-sm font-bold text-gray-900 mt-0.5">{selectedFeedback.aspects.nursingStaff || 5} / 5</p>
+                    </div>
+                    <div className="p-3 bg-white border border-gray-100 rounded-xl text-center">
+                      <p className="text-[11px] text-gray-400 font-medium">Billing Clarity</p>
+                      <p className="text-sm font-bold text-gray-900 mt-0.5">{selectedFeedback.aspects.billingClarity || 5} / 5</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
+              <div>
+                <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider mb-2">Patient Written Comment</h4>
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                  <p className="text-xs text-gray-700 leading-relaxed italic">
+                    &quot;{selectedFeedback.comment}&quot;
+                  </p>
+                </div>
+              </div>
+
+              {/* Resolution Notes for Detractor / Grievance */}
+              <div className="p-4 bg-gray-50/60 rounded-xl border border-gray-100 space-y-2">
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  Patient Relations Follow-Up Log
+                </label>
+                <textarea 
+                  value={followUpNote}
+                  onChange={(e) => setFollowUpNote(e.target.value)}
+                  className="cursor-text w-full p-3 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#0B5E5E]/20" 
+                  rows={2} 
+                  placeholder="e.g. Called patient, explained OPD wait times due to emergency case. Patient was reassured."
+                />
+              </div>
+
             </div>
 
-            <div className="flex justify-end gap-3 p-5 bg-gray-50/50 border-t border-gray-100">
-              <button 
-                onClick={() => {
-                  showToast('Follow-up task created for patient relations.');
-                  setSelectedFeedback(null);
-                }}
-                className="cursor-pointer px-5 py-2.5 text-sm font-semibold border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Create Follow-up Task
-              </button>
-              <button 
-                onClick={() => {
-                  showToast('Replied to patient successfully.');
-                  setSelectedFeedback(null);
-                }}
-                className="cursor-pointer px-5 py-2.5 text-sm font-semibold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Mark as Resolved
-              </button>
+            <div className="flex items-center justify-between p-6 bg-gray-50/50 border-t border-gray-100">
+              <span className="text-xs text-gray-400 font-medium">
+                Current Status: <strong>{selectedFeedback.status}</strong>
+              </span>
+
+              <div className="flex gap-3">
+                {selectedFeedback.status !== 'Action Required' && (
+                  <button 
+                    onClick={() => handleUpdateStatus(selectedFeedback.id, 'Action Required')}
+                    disabled={updatingStatus}
+                    className="cursor-pointer px-4 py-2 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg border border-red-100 transition-colors"
+                  >
+                    Mark Action Required
+                  </button>
+                )}
+
+                <button 
+                  onClick={() => handleUpdateStatus(selectedFeedback.id, 'Resolved')}
+                  disabled={updatingStatus}
+                  className="cursor-pointer px-5 py-2 text-xs font-bold text-white bg-[#0B5E5E] rounded-lg hover:bg-[#0B5E5E]/90 transition-colors shadow-sm"
+                >
+                  {updatingStatus ? 'Updating...' : 'Mark as Resolved'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -378,11 +691,9 @@ export default function FeedbackPage() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-[100] bg-gray-900 text-white px-5 py-3 rounded-xl shadow-xl flex items-center gap-3 animate-in slide-in-from-bottom-5 fade-in duration-300">
-          <div className="w-5 h-5 rounded-full bg-success/20 flex items-center justify-center">
-            <div className="w-2 h-2 rounded-full bg-success"></div>
-          </div>
-          <p className="text-sm font-medium">{toastMessage}</p>
+        <div className="fixed bottom-6 right-6 z-50 bg-[#0B5E5E] text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-300 animate-ping" />
+          <span className="text-sm font-semibold">{toastMessage}</span>
         </div>
       )}
 

@@ -1,65 +1,91 @@
 "use client";
 
-import React, { useState } from "react";
-import { Search, ChevronDown, Plus, Filter, Download, MoreHorizontal } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Search, ChevronDown, Filter, Download, Loader2, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import NewRegistrationButton from "@/components/ui/NewRegistrationButton";
 import ActionMenu from "@/components/ui/ActionMenu";
-
-const MOCK_PATIENTS = [
-  { id: "SG-1234", name: "Suresh Gowda", uhid: "BLR-0042871", abha: "Linked", genderAge: "M · 61y", contact: "+91 98xxxx4410", lastVisit: "Today, 09:30 AM", status: "IPD - Admitted", statusType: "primary" as const },
-  { id: "AK-4592", name: "Anita Kumar", uhid: "BLR-0051928", abha: "Pending", genderAge: "F · 34y", contact: "+91 99xxxx8811", lastVisit: "Yesterday, 14:15", status: "OPD - Completed", statusType: "neutral" as const },
-  { id: "RJ-9821", name: "Rahul Jain", uhid: "BLR-0062719", abha: "Linked", genderAge: "M · 45y", contact: "+91 88xxxx2299", lastVisit: "Oct 4, 11:00 AM", status: "Follow-up Due", statusType: "warning" as const },
-  { id: "MN-7712", name: "Meena N.", uhid: "BLR-0071823", abha: "Linked", genderAge: "F · 28y", contact: "+91 77xxxx5544", lastVisit: "Oct 2, 09:45 AM", status: "OPD - No Show", statusType: "alert" as const },
-  { id: "VK-8823", name: "Vikram K.", uhid: "BLR-0082734", abha: "Pending", genderAge: "M · 52y", contact: "+91 96xxxx1122", lastVisit: "Sep 28, 16:30", status: "Discharged", statusType: "success" as const },
-  { id: "SP-1192", name: "Sunita Patil", uhid: "BLR-0091827", abha: "Linked", genderAge: "F · 41y", contact: "+91 98xxxx7766", lastVisit: "Sep 25, 10:15 AM", status: "OPD - Completed", statusType: "neutral" as const },
-  { id: "PR-2391", name: "Priya Rajan", uhid: "BLR-0045812", abha: "Pending", genderAge: "F · 29y", contact: "+91 98xxxx1234", lastVisit: "Sep 20, 11:30 AM", status: "Follow-up Due", statusType: "warning" as const },
-  { id: "AS-4812", name: "Amit Singh", uhid: "BLR-0078192", abha: "Linked", genderAge: "M · 35y", contact: "+91 99xxxx5678", lastVisit: "Sep 18, 09:00 AM", status: "OPD - Completed", statusType: "neutral" as const },
-  { id: "MD-9182", name: "Mohan Das", uhid: "BLR-0081293", abha: "Linked", genderAge: "M · 48y", contact: "+91 88xxxx9012", lastVisit: "Sep 15, 14:45", status: "IPD - Admitted", statusType: "primary" as const },
-  { id: "KN-3819", name: "Kavya Nair", uhid: "BLR-0091283", abha: "Pending", genderAge: "F · 25y", contact: "+91 77xxxx3456", lastVisit: "Sep 12, 16:00", status: "Discharged", statusType: "success" as const },
-  { id: "RV-4821", name: "Ravi Varma", uhid: "BLR-0102938", abha: "Linked", genderAge: "M · 55y", contact: "+91 96xxxx7890", lastVisit: "Sep 10, 10:15 AM", status: "OPD - No Show", statusType: "alert" as const },
-  { id: "SM-1928", name: "Sneha Menon", uhid: "BLR-0113849", abha: "Linked", genderAge: "F · 38y", contact: "+91 98xxxx2345", lastVisit: "Sep 05, 11:45 AM", status: "OPD - Completed", statusType: "neutral" as const },
-  { id: "DP-2918", name: "Deepak P.", uhid: "BLR-0124859", abha: "Pending", genderAge: "M · 42y", contact: "+91 99xxxx6789", lastVisit: "Sep 01, 09:30 AM", status: "Follow-up Due", statusType: "warning" as const },
-  { id: "AR-4819", name: "Anjali Rao", uhid: "BLR-0135869", abha: "Linked", genderAge: "F · 31y", contact: "+91 88xxxx0123", lastVisit: "Aug 28, 14:00", status: "IPD - Admitted", statusType: "primary" as const },
-  { id: "VS-5829", name: "Vijay Sharma", uhid: "BLR-0146879", abha: "Linked", genderAge: "M · 65y", contact: "+91 77xxxx4567", lastVisit: "Aug 25, 10:45 AM", status: "Discharged", statusType: "success" as const },
-  { id: "NK-6938", name: "Neha Kapoor", uhid: "BLR-0157889", abha: "Pending", genderAge: "F · 27y", contact: "+91 96xxxx8901", lastVisit: "Aug 20, 16:30", status: "OPD - No Show", statusType: "alert" as const },
-];
+import { patientApi, Patient } from "@/lib/api";
 
 const ITEMS_PER_PAGE = 7;
 
 export default function PatientsList() {
-  const [patients, setPatients] = useState(MOCK_PATIENTS);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
-  const filteredPatients = patients.filter(p => {
-    const query = searchQuery.toLowerCase();
-    const matchesSearch = p.name.toLowerCase().includes(query) || p.uhid.toLowerCase().includes(query) || p.contact.includes(query);
-    const matchesStatus = statusFilter === "All" || p.status.includes(statusFilter);
-    return matchesSearch && matchesStatus;
-  });
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
-  const totalPages = Math.ceil(filteredPatients.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const currentPatients = filteredPatients.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  const fetchPatients = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await patientApi.getAll({
+        search: searchQuery,
+        status: statusFilter === "All" ? undefined : statusFilter,
+        page: currentPage,
+        limit: ITEMS_PER_PAGE,
+      });
 
-  // Reset to page 1 if filters change
-  React.useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+      if (res.success && res.data) {
+        setPatients(res.data.patients);
+        setTotalPages(res.data.pagination.totalPages);
+        setTotalCount(res.data.pagination.total);
+      } else {
+        setError(res.message || "Failed to load patient records");
+      }
+    } catch (err: any) {
+      setError(err.message || "Unable to reach server");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [searchQuery, statusFilter, currentPage]);
+
+  useEffect(() => {
+    fetchPatients();
+  }, [fetchPatients]);
+
+  // Reset page when search or filter changes
+  useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, statusFilter]);
 
-  const handleDeletePatient = (id: string) => {
-    setPatients((prev) => prev.filter((p) => p.id !== id));
-    // Adjust page if we deleted the last item on the current page
-    if (currentPatients.length === 1 && currentPage > 1) {
-      setCurrentPage(prev => prev - 1);
+  const handleDeletePatient = async (id: string) => {
+    try {
+      await patientApi.delete(id);
+      showToast("Patient record removed successfully.");
+      fetchPatients();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete patient");
     }
+  };
+
+  const handlePatientRegistered = (newPatient: Patient) => {
+    showToast(`Patient ${newPatient.name} registered successfully with UHID: ${newPatient.uhid}!`);
+    setCurrentPage(1);
+    fetchPatients();
   };
 
   return (
     <>
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-5 right-5 z-50 bg-[#0B5E5E] text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-sm animate-in slide-in-from-top-2 duration-200">
+          <CheckCircle2 size={18} className="text-[#9CCFC8]" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Header */}
       <header className="flex flex-col md:flex-row md:items-center justify-between px-4 md:px-8 py-4 md:py-6 bg-canvas shrink-0 gap-4">
         <div>
@@ -100,21 +126,38 @@ export default function PatientsList() {
             <ChevronDown size={14} className="absolute right-3 pointer-events-none text-gray-500" />
           </div>
 
-          <NewRegistrationButton />
+          <NewRegistrationButton onPatientRegistered={handlePatientRegistered} />
         </div>
       </header>
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto px-4 md:px-8 pb-4 md:pb-8">
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col h-full">
+          
           {/* Table Toolbar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between px-4 md:px-6 py-4 border-b border-gray-100 gap-4">
             <div className="flex items-center gap-4">
-              <span className="text-sm font-semibold text-gray-700">Matched Patients ({filteredPatients.length})</span>
-              <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-xs font-semibold">Total: {patients.length}</span>
+              <span className="text-sm font-semibold text-gray-700">Live Database Records</span>
+              <span className="bg-primary/10 text-primary px-2.5 py-0.5 rounded text-xs font-semibold">
+                Total: {totalCount} Patients
+              </span>
             </div>
             <div className="flex items-center gap-3">
-              <button className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors cursor-pointer">
+              <button 
+                onClick={() => {
+                  const csv = [
+                    ['UHID', 'Name', 'Gender/Age', 'Contact', 'Status', 'Last Visit'].join(','),
+                    ...patients.map(p => [p.uhid, `"${p.name}"`, `"${p.genderAge}"`, p.contact, `"${p.status}"`, `"${p.lastVisit}"`].join(','))
+                  ].join('\n');
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `patients_export_${new Date().toISOString().split('T')[0]}.csv`;
+                  a.click();
+                }}
+                className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors cursor-pointer"
+              >
                 <Download size={16} /> Export CSV
               </button>
             </div>
@@ -135,16 +178,43 @@ export default function PatientsList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {patients.length === 0 ? (
+                {isLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gray-200 shrink-0" />
+                          <div className="h-4 bg-gray-200 rounded w-28" />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24 mb-1" /><div className="h-3 bg-gray-100 rounded w-16" /></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16" /></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24" /></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-28" /></td>
+                      <td className="px-6 py-4"><div className="h-6 bg-gray-200 rounded-full w-24" /></td>
+                      <td className="px-6 py-4 text-right"><div className="h-6 bg-gray-100 rounded w-6 ml-auto" /></td>
+                    </tr>
+                  ))
+                ) : error ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">No patients found.</td>
+                    <td colSpan={7} className="px-6 py-12 text-center text-red-500 font-medium">
+                      {error}
+                      <button onClick={fetchPatients} className="ml-3 underline font-semibold text-primary">Retry</button>
+                    </td>
+                  </tr>
+                ) : patients.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                      No patients found matching your search.
+                    </td>
                   </tr>
                 ) : (
-                  currentPatients.map((p) => (
+                  patients.map((p) => (
                     <PatientRow 
-                      key={p.id}
-                      {...p}
-                      onDelete={() => handleDeletePatient(p.id)}
+                      key={p.uhid || p.id}
+                      patient={p}
+                      onDelete={() => handleDeletePatient(p.uuid || p.id)}
+                      onUpdated={fetchPatients}
                     />
                   ))
                 )}
@@ -155,12 +225,12 @@ export default function PatientsList() {
           {/* Pagination */}
           <div className="flex flex-col md:flex-row items-center justify-between px-4 md:px-6 py-4 border-t border-gray-100 bg-gray-50 gap-4 text-center">
             <span className="text-sm text-gray-500">
-              Showing {filteredPatients.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + ITEMS_PER_PAGE, filteredPatients.length)} of {filteredPatients.length} entries
+              Showing Page {currentPage} of {totalPages} &middot; Total {totalCount} records
             </span>
             <div className="flex gap-1">
               <button 
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
+                disabled={currentPage === 1 || isLoading}
                 className="px-3 py-1 border border-gray-200 bg-white rounded text-sm font-medium text-gray-500 disabled:opacity-50 cursor-pointer hover:bg-gray-50 transition-colors"
               >
                 Prev
@@ -186,22 +256,32 @@ export default function PatientsList() {
 
               <button 
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages || totalPages === 0}
+                disabled={currentPage === totalPages || totalPages === 0 || isLoading}
                 className="px-3 py-1 border border-gray-200 bg-white rounded text-sm font-medium text-gray-700 disabled:opacity-50 hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 Next
               </button>
             </div>
           </div>
+
         </div>
       </div>
     </>
   );
 }
 
-function PatientRow({ id, name, uhid, abha, genderAge, contact, lastVisit, status, statusType, onDelete }: { id: string, name: string, uhid: string, abha: string, genderAge: string, contact: string, lastVisit: string, status: string, statusType: 'primary' | 'success' | 'warning' | 'alert' | 'neutral', onDelete: () => void }) {
+function PatientRow({ 
+  patient, 
+  onDelete,
+  onUpdated 
+}: { 
+  patient: Patient; 
+  onDelete: () => void;
+  onUpdated: () => void;
+}) {
+  const { id, name, uhid, abha, genderAge, contact, lastVisit, status, statusType } = patient;
   
-  const statusStyles = {
+  const statusStyles: Record<string, string> = {
     primary: 'bg-primary/10 text-primary font-semibold',
     success: 'bg-success/10 text-success font-semibold',
     warning: 'bg-warning/10 text-warning font-semibold',
@@ -209,14 +289,14 @@ function PatientRow({ id, name, uhid, abha, genderAge, contact, lastVisit, statu
     neutral: 'bg-gray-100 text-gray-700 font-semibold'
   };
 
-  const abhaColor = abha === 'Linked' ? 'text-success' : 'text-gray-400';
+  const abhaColor = abha === 'Linked' ? 'text-success font-semibold' : 'text-gray-400';
 
   return (
     <tr className="hover:bg-gray-50 transition-colors group">
       <td className="px-6 py-4">
-        <Link href={`/patient/${id}`} className="font-semibold text-gray-900 hover:text-primary transition-colors flex items-center gap-3">
+        <Link href={`/patient/${encodeURIComponent(uhid || id)}`} className="font-semibold text-gray-900 hover:text-primary transition-colors flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-primary-soft/30 flex items-center justify-center text-primary font-bold text-xs shrink-0">
-            {name.split(' ').map(n => n[0]).join('')}
+            {name ? name.split(' ').map(n => n[0]).join('').substring(0, 2) : 'PT'}
           </div>
           {name}
         </Link>
@@ -224,19 +304,25 @@ function PatientRow({ id, name, uhid, abha, genderAge, contact, lastVisit, statu
       <td className="px-6 py-4">
         <div className="flex flex-col">
           <span className="text-gray-900 font-medium">{uhid}</span>
-          <span className={`text-xs flex items-center gap-1 ${abhaColor}`}>ABHA: {abha}</span>
+          <span className={`text-xs flex items-center gap-1 ${abhaColor}`}>
+            ABHA: {abha}
+          </span>
         </div>
       </td>
-      <td className="px-6 py-4 text-gray-700">{genderAge}</td>
-      <td className="px-6 py-4 text-gray-700">{contact}</td>
-      <td className="px-6 py-4 text-gray-700">{lastVisit}</td>
+      <td className="px-6 py-4 text-gray-700">{genderAge || "—"}</td>
+      <td className="px-6 py-4 text-gray-700">{contact || "—"}</td>
+      <td className="px-6 py-4 text-gray-700">{lastVisit || "Today"}</td>
       <td className="px-6 py-4">
-        <span className={`inline-block px-2.5 py-1 rounded-full text-xs ${statusStyles[statusType]}`}>
+        <span className={`inline-block px-2.5 py-1 rounded-full text-xs ${statusStyles[statusType] || statusStyles.neutral}`}>
           {status}
         </span>
       </td>
       <td className="px-6 py-4 text-right">
-        <ActionMenu patientId={id} patientName={name} onDelete={onDelete} />
+        <ActionMenu 
+          patient={patient} 
+          onDelete={onDelete} 
+          onUpdated={onUpdated}
+        />
       </td>
     </tr>
   );

@@ -1,28 +1,81 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, X, Calendar, User, Phone, Mail, Stethoscope } from "lucide-react";
+import { Plus, X, Calendar, User, Phone, Mail, Stethoscope, AlertCircle } from "lucide-react";
+import { patientApi, Patient } from "@/lib/api";
 
-export default function NewRegistrationButton() {
+interface NewRegistrationButtonProps {
+  onPatientRegistered?: (patient: Patient) => void;
+}
+
+export default function NewRegistrationButton({ onPatientRegistered }: NewRegistrationButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Form State
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [dob, setDob] = useState("");
+  const [gender, setGender] = useState("M");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [department, setDepartment] = useState("General Medicine");
+  const [source, setSource] = useState("Walk-in");
+
+  const resetForm = () => {
+    setFirstName("");
+    setLastName("");
+    setDob("");
+    setGender("M");
+    setPhone("");
+    setEmail("");
+    setDepartment("General Medicine");
+    setSource("Walk-in");
+    setError(null);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setIsSubmitting(true);
-    // Simulate API call
-    setTimeout(() => {
+
+    try {
+      const res = await patientApi.create({
+        firstName,
+        lastName,
+        dob,
+        gender,
+        phone,
+        email: email || undefined,
+        department,
+        source,
+      });
+
+      if (res.success && res.data) {
+        if (onPatientRegistered) {
+          onPatientRegistered(res.data);
+        }
+        resetForm();
+        setIsOpen(false);
+      } else {
+        setError(res.message || "Failed to register patient");
+      }
+    } catch (err: any) {
+      setError(err.message || "Error submitting patient registration");
+    } finally {
       setIsSubmitting(false);
-      setIsOpen(false);
-      alert("Patient registered successfully!");
-    }, 1000);
+    }
   };
 
   return (
     <>
       <button 
-        onClick={() => setIsOpen(true)}
-        className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-full text-sm font-medium hover:bg-primary/90 transition-colors"
+        onClick={() => {
+          resetForm();
+          setIsOpen(true);
+        }}
+        className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-full text-sm font-medium hover:bg-primary/90 transition-colors cursor-pointer shadow-sm hover:shadow"
       >
         <Plus size={16} /> New registration
       </button>
@@ -33,10 +86,13 @@ export default function NewRegistrationButton() {
             
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-              <h2 className="text-lg font-bold text-gray-900">New Patient Registration</h2>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">New Patient Registration</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Enter patient credentials to generate UHID</p>
+              </div>
               <button 
                 onClick={() => setIsOpen(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
               >
                 <X size={20} />
               </button>
@@ -44,6 +100,13 @@ export default function NewRegistrationButton() {
 
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto flex-1">
+              {error && (
+                <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+                  <AlertCircle size={16} className="shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
               <form id="registration-form" onSubmit={handleSubmit} className="space-y-6">
                 
                 {/* Personal Details */}
@@ -54,23 +117,46 @@ export default function NewRegistrationButton() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2 sm:col-span-1">
                       <label className="block text-xs font-medium text-gray-700 mb-1">First Name *</label>
-                      <input required type="text" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="e.g. Suresh" />
+                      <input 
+                        required 
+                        type="text" 
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" 
+                        placeholder="e.g. Ramesh" 
+                      />
                     </div>
                     <div className="col-span-2 sm:col-span-1">
                       <label className="block text-xs font-medium text-gray-700 mb-1">Last Name</label>
-                      <input type="text" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="e.g. Gowda" />
+                      <input 
+                        type="text" 
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" 
+                        placeholder="e.g. Sharma" 
+                      />
                     </div>
                     <div className="col-span-2 sm:col-span-1">
                       <label className="block text-xs font-medium text-gray-700 mb-1">Date of Birth *</label>
                       <div className="relative">
                         <Calendar size={14} className="absolute left-3 top-2.5 text-gray-400" />
-                        <input required type="date" className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+                        <input 
+                          required 
+                          type="date" 
+                          value={dob}
+                          onChange={(e) => setDob(e.target.value)}
+                          className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" 
+                        />
                       </div>
                     </div>
                     <div className="col-span-2 sm:col-span-1">
                       <label className="block text-xs font-medium text-gray-700 mb-1">Gender *</label>
-                      <select required className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white">
-                        <option value="">Select gender</option>
+                      <select 
+                        required 
+                        value={gender}
+                        onChange={(e) => setGender(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white cursor-pointer"
+                      >
                         <option value="M">Male</option>
                         <option value="F">Female</option>
                         <option value="O">Other</option>
@@ -89,11 +175,24 @@ export default function NewRegistrationButton() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2 sm:col-span-1">
                       <label className="block text-xs font-medium text-gray-700 mb-1">Phone Number *</label>
-                      <input required type="tel" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="+91" />
+                      <input 
+                        required 
+                        type="tel" 
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" 
+                        placeholder="+91 9876543210" 
+                      />
                     </div>
                     <div className="col-span-2 sm:col-span-1">
                       <label className="block text-xs font-medium text-gray-700 mb-1">Email Address</label>
-                      <input type="email" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="email@example.com" />
+                      <input 
+                        type="email" 
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" 
+                        placeholder="patient@example.com" 
+                      />
                     </div>
                   </div>
                 </div>
@@ -108,7 +207,11 @@ export default function NewRegistrationButton() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2 sm:col-span-1">
                       <label className="block text-xs font-medium text-gray-700 mb-1">Department</label>
-                      <select className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white">
+                      <select 
+                        value={department}
+                        onChange={(e) => setDepartment(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white cursor-pointer"
+                      >
                         <option>General Medicine</option>
                         <option>Cardiology</option>
                         <option>Orthopaedics</option>
@@ -119,7 +222,11 @@ export default function NewRegistrationButton() {
                     </div>
                     <div className="col-span-2 sm:col-span-1">
                       <label className="block text-xs font-medium text-gray-700 mb-1">Source</label>
-                      <select className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white">
+                      <select 
+                        value={source}
+                        onChange={(e) => setSource(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white cursor-pointer"
+                      >
                         <option>Walk-in</option>
                         <option>Website</option>
                         <option>WhatsApp</option>
@@ -138,7 +245,7 @@ export default function NewRegistrationButton() {
               <button 
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -146,7 +253,7 @@ export default function NewRegistrationButton() {
                 type="submit"
                 form="registration-form"
                 disabled={isSubmitting}
-                className="px-6 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-6 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer shadow-sm"
               >
                 {isSubmitting ? (
                   <>

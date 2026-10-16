@@ -1,75 +1,99 @@
 "use client";
 
-import React, { useState } from "react";
-import { Search, ChevronDown, Calendar as CalendarIcon, Clock, Filter, User } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Search, Calendar as CalendarIcon, Clock, Filter, User, Stethoscope, Loader2, AlertCircle } from "lucide-react";
 import BranchDropdown from "@/components/ui/BranchDropdown";
 import BookAppointmentButton from "@/components/ui/BookAppointmentButton";
 import AppointmentActionMenu from "@/components/ui/AppointmentActionMenu";
 import Link from "next/link";
-
-export type Appointment = {
-  id: string;
-  time: string;
-  patient: string;
-  doctor: string;
-  dept: string;
-  source: string;
-  status: string;
-  statusType: "primary" | "success" | "warning" | "neutral" | "alert";
-};
-
-const INITIAL_APPOINTMENTS: Appointment[] = [
-  { id: "APP-101", time: "09:30 AM", patient: "Ramesh Kulkarni", doctor: "Dr. A. Rao", dept: "Cardiology", source: "App", status: "In consult", statusType: "primary" as const },
-  { id: "APP-102", time: "09:45 AM", patient: "Fatima Shaikh", doctor: "Dr. S. Iyer", dept: "Gynaecology", source: "WhatsApp", status: "Checked in", statusType: "success" as const },
-  { id: "APP-103", time: "10:00 AM", patient: "Arjun Patil", doctor: "Dr. M. Desai", dept: "Orthopaedics", source: "Referral", status: "Waiting 18m", statusType: "warning" as const },
-  { id: "APP-104", time: "10:15 AM", patient: "Lakshmi N.", doctor: "Dr. A. Rao", dept: "Cardiology", source: "Call centre", status: "Booked", statusType: "neutral" as const },
-  { id: "APP-105", time: "10:30 AM", patient: "Vikram Joshi", doctor: "Dr. K. Nair", dept: "Neurology", source: "Website", status: "No-show", statusType: "alert" as const },
-  { id: "APP-106", time: "11:00 AM", patient: "Sarah Lee", doctor: "Dr. A. Rao", dept: "Cardiology", source: "Walk-in", status: "Booked", statusType: "neutral" as const },
-  { id: "APP-107", time: "11:15 AM", patient: "Mohammed Ali", doctor: "Dr. M. Desai", dept: "Orthopaedics", source: "App", status: "Booked", statusType: "neutral" as const },
-  { id: "APP-108", time: "12:00 PM", patient: "Priya Singh", doctor: "Dr. S. Iyer", dept: "Gynaecology", source: "Referral", status: "Booked", statusType: "neutral" as const },
-];
+import { Appointment, appointmentApi } from "@/lib/api";
 
 export default function AppointmentsPage() {
-  const [appointments, setAppointments] = useState(INITIAL_APPOINTMENTS);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
-  const filteredApps = appointments.filter(a => {
-    const query = searchQuery.toLowerCase();
-    const matchesSearch = a.patient.toLowerCase().includes(query) || a.doctor.toLowerCase().includes(query);
-    const matchesStatus = statusFilter === "All" || a.status.includes(statusFilter) || (statusFilter === "Booked" && a.status === "Booked");
-    return matchesSearch && matchesStatus;
-  });
+  const fetchAppointments = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await appointmentApi.getAll({
+        search: searchQuery,
+        status: statusFilter !== "All" ? statusFilter : undefined,
+      });
 
-  const handleBookNew = (newApp: Appointment) => {
-    setAppointments(prev => {
-      return [newApp, ...prev];
-    });
-  };
-
-  const handleCancelAppointment = (id: string) => {
-    setAppointments(prev => prev.filter(a => a.id !== id));
-  };
-
-  const cycleStatus = (id: string) => {
-    setAppointments(prev => prev.map(a => {
-      if (a.id === id) {
-        if (a.status === "Booked") return { ...a, status: "Checked in", statusType: "success" };
-        if (a.status === "Checked in") return { ...a, status: "Waiting", statusType: "warning" };
-        if (a.status.startsWith("Waiting")) return { ...a, status: "In consult", statusType: "primary" };
-        if (a.status === "In consult") return { ...a, status: "Completed", statusType: "neutral" };
-        return { ...a, status: "Booked", statusType: "neutral" }; // loop back
+      if (res.success && res.data) {
+        setAppointments(res.data);
+      } else {
+        setError(res.message || "Failed to load appointments");
       }
-      return a;
-    }));
+    } catch (err: any) {
+      setError(err.message || "Unable to connect to appointments service");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [searchQuery, statusFilter]);
+
+  useEffect(() => {
+    fetchAppointments();
+  }, [fetchAppointments]);
+
+  const handleBookNew = (_newApp: Appointment) => {
+    fetchAppointments();
   };
+
+  const handleCancelAppointment = async (id: string) => {
+    try {
+      await appointmentApi.cancel(id);
+      fetchAppointments();
+    } catch (err: any) {
+      alert(err.message || "Failed to cancel appointment");
+    }
+  };
+
+  const cycleStatus = async (app: Appointment) => {
+    const nextStatusMap: Record<string, { status: string; statusType: 'primary' | 'success' | 'warning' | 'neutral' | 'alert' }> = {
+      'Booked': { status: 'Checked in', statusType: 'success' },
+      'Checked in': { status: 'Waiting', statusType: 'warning' },
+      'Waiting': { status: 'In consult', statusType: 'primary' },
+      'In consult': { status: 'Completed', statusType: 'neutral' },
+      'Completed': { status: 'Booked', statusType: 'neutral' },
+    };
+
+    const next = nextStatusMap[app.status] || { status: 'Booked', statusType: 'neutral' };
+
+    try {
+      await appointmentApi.update(app.uuid || app.id, {
+        status: next.status,
+        statusType: next.statusType,
+      });
+
+      setAppointments(prev => prev.map(a => {
+        if (a.id === app.id) {
+          return { ...a, status: next.status, statusType: next.statusType };
+        }
+        return a;
+      }));
+    } catch (err: any) {
+      alert(err.message || "Failed to update appointment status");
+    }
+  };
+
+  const todayFormatted = new Date().toLocaleDateString("en-IN", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
 
   return (
     <>
       <header className="flex flex-col md:flex-row md:items-center justify-between px-4 md:px-8 py-4 md:py-6 bg-canvas shrink-0 gap-4">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Appointments Schedule</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage and schedule patient visits for today</p>
+          <p className="text-sm text-gray-500 mt-1">Manage and schedule patient visits in real time</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 md:gap-4 w-full md:w-auto">
@@ -99,13 +123,13 @@ export default function AppointmentsPage() {
               <div className="flex items-center gap-2 cursor-pointer text-gray-900 font-semibold border-b-2 border-primary pb-1">
                 <Clock size={16} className="text-primary"/> List View
               </div>
-              <div className="flex items-center gap-2 cursor-not-allowed text-gray-400 font-medium pb-1">
-                <CalendarIcon size={16}/> Calendar View (Coming Soon)
+              <div className="flex items-center gap-2 text-gray-400 font-medium pb-1">
+                <CalendarIcon size={16}/> Total: {appointments.length} Bookings
               </div>
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-gray-500 flex items-center gap-1">
-                <CalendarIcon size={14}/> Today, 8 Oct
+                <CalendarIcon size={14}/> Today, {todayFormatted}
               </span>
               <div className="h-4 w-px bg-gray-300 mx-2"></div>
               <select 
@@ -127,39 +151,74 @@ export default function AppointmentsPage() {
             <table className="w-full text-sm text-left">
               <thead className="bg-white border-b border-gray-100">
                 <tr className="text-gray-500">
-                  <th className="px-6 py-3 font-medium">Time</th>
+                  <th className="px-6 py-3 font-medium">Time Slot</th>
                   <th className="px-6 py-3 font-medium">Patient</th>
                   <th className="px-6 py-3 font-medium">Doctor</th>
                   <th className="px-6 py-3 font-medium">Department</th>
-                  <th className="px-6 py-3 font-medium">Source</th>
-                  <th className="px-6 py-3 font-medium">Status (Click to update)</th>
+                  <th className="px-6 py-3 font-medium">Channel</th>
+                  <th className="px-6 py-3 font-medium">Status (Click to toggle)</th>
                   <th className="px-6 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filteredApps.length === 0 ? (
+                {isLoading ? (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-20" /></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-32" /></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-28" /></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24" /></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16" /></td>
+                      <td className="px-6 py-4"><div className="h-6 bg-gray-200 rounded-full w-20" /></td>
+                      <td className="px-6 py-4 text-right"><div className="h-4 bg-gray-200 rounded w-6 ml-auto" /></td>
+                    </tr>
+                  ))
+                ) : error ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">No appointments found.</td>
+                    <td colSpan={7} className="px-6 py-12 text-center text-red-500 font-medium">
+                      <AlertCircle size={28} className="mx-auto mb-2 text-red-500" />
+                      {error}
+                      <button onClick={fetchAppointments} className="ml-3 underline font-semibold text-primary">Retry</button>
+                    </td>
+                  </tr>
+                ) : appointments.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                      No appointments found for the selected filter.
+                    </td>
                   </tr>
                 ) : (
-                  filteredApps.map(app => (
-                    <tr key={app.id} className="hover:bg-gray-50 transition-colors group cursor-pointer">
-                      <td className="px-6 py-4 font-semibold text-gray-900">{app.time}</td>
+                  appointments.map(app => (
+                    <tr key={app.id} className="hover:bg-gray-50 transition-colors group">
+                      <td className="px-6 py-4 font-semibold text-gray-900">{app.time || app.timeSlot}</td>
                       <td className="px-6 py-4">
-                        <Link href={`/patient/SG-1234`} className="font-semibold text-gray-900 hover:text-primary transition-colors flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 font-bold text-xs">
                             <User size={14}/>
                           </div>
-                          {app.patient}
-                        </Link>
+                          <div>
+                            <p className="font-semibold text-gray-900">{app.patient || app.patientName}</p>
+                            {app.patientUhid && (
+                              <p className="text-[11px] text-gray-400 font-medium">{app.patientUhid}</p>
+                            )}
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-6 py-4 text-gray-700 font-medium">{app.doctor}</td>
-                      <td className="px-6 py-4 text-gray-600">{app.dept}</td>
-                      <td className="px-6 py-4 text-gray-600">{app.source}</td>
+                      <td className="px-6 py-4 text-gray-700 font-medium flex items-center gap-1.5 mt-2">
+                        <Stethoscope size={14} className="text-primary shrink-0" />
+                        <span>{app.doctor || app.doctorName}</span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-600">{app.dept || app.department}</td>
+                      <td className="px-6 py-4 text-gray-600">
+                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">
+                          {app.source || 'Walk-in'}
+                        </span>
+                      </td>
                       <td className="px-6 py-4">
                         <button 
-                          onClick={() => cycleStatus(app.id)}
-                          className={`inline-block px-3 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity font-semibold ${
+                          onClick={() => cycleStatus(app)}
+                          title="Click to advance status"
+                          className={`inline-block px-3 py-1 rounded-full text-xs cursor-pointer hover:opacity-85 transition-opacity font-semibold ${
                             app.statusType === 'primary' ? 'bg-primary/10 text-primary' :
                             app.statusType === 'success' ? 'bg-success/10 text-success' :
                             app.statusType === 'warning' ? 'bg-warning/10 text-warning' :
@@ -172,9 +231,14 @@ export default function AppointmentsPage() {
                       </td>
                       <td className="px-6 py-4 text-right">
                          <AppointmentActionMenu 
-                           appointmentId={app.id} 
-                           patientName={app.patient} 
-                           onCancel={() => handleCancelAppointment(app.id)} 
+                           appointmentId={app.uuid || app.id} 
+                           patientName={app.patient || app.patientName}
+                           patientUhid={app.patientUhid}
+                           patientId={app.patientId}
+                           currentDate={app.date}
+                           currentTime={app.time || app.timeSlot}
+                           onCancel={() => handleCancelAppointment(app.uuid || app.id)} 
+                           onRescheduled={fetchAppointments}
                          />
                       </td>
                     </tr>
