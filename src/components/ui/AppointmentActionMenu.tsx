@@ -7,7 +7,7 @@ import { appointmentApi } from "@/lib/api";
 
 interface AppointmentActionMenuProps {
   appointmentId: string;
-  patientName: string;
+  patientName?: string;
   patientUhid?: string | null;
   patientId?: string | null;
   currentDate?: string;
@@ -18,7 +18,7 @@ interface AppointmentActionMenuProps {
 
 export default function AppointmentActionMenu({ 
   appointmentId, 
-  patientName, 
+  patientName = "Patient", 
   patientUhid,
   patientId,
   currentDate,
