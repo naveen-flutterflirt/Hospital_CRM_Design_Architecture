@@ -79,7 +79,7 @@ export default function Sidebar() {
       )}
 
       {/* Sidebar Drawer (Mobile & Desktop) */}
-      <aside className={`fixed inset-y-0 left-0 md:relative z-50 ${isCollapsed ? 'md:w-20' : 'md:w-64'} w-[280px] bg-nav text-white flex flex-col shrink-0 h-full overflow-hidden transform transition-all duration-300 ease-in-out shadow-2xl md:shadow-none ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+      <aside className={`fixed inset-y-0 left-0 md:relative z-50 ${isCollapsed ? 'md:w-20' : 'md:w-64'} w-[280px] bg-nav text-white flex flex-col shrink-0 h-full transform transition-all duration-300 ease-in-out shadow-2xl md:shadow-none ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
 
         {/* Close Button inside Drawer (Mobile Only) */}
         <button
@@ -100,9 +100,10 @@ export default function Sidebar() {
           {/* Desktop Collapse Toggle */}
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="hidden md:flex absolute top-6 -right-3 w-6 h-6 bg-white border border-gray-200 rounded-full items-center justify-center text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors shadow-sm z-50 cursor-pointer"
+            className="hidden md:flex absolute top-7 -right-3.5 w-7 h-7 bg-white border border-gray-200 rounded-full items-center justify-center text-gray-700 hover:bg-gray-100 hover:text-primary transition-all shadow-md z-50 cursor-pointer"
+            title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
           >
-            {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            {isCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
           </button>
         </div>
 
